@@ -1,44 +1,39 @@
-// --- Libraries Included ---
+// ========== Libraries Included ==========
 #include <Servo.h>
 
-// --- IO Pin Connections ---
-const int IN1 = ;
-const int IN2 = ;
-const int ENA = ;
+// ========== Structures ==========
+struct PDGain(){
+  float Kp;
+  float Kd;
+}
 
-const int IN3 = ;
-const int IN4 = ;
-const int ENB = ;
+// ========== IO Pin Connections ==========
+const int IN1 = 2;
+const int IN2 = 7;
+const int ENA = 11;
 
-const int servo = ;
+const int IN3 = 4;
+const int IN4 = 8;
+const int ENB = 10;
 
-const int IR[] = {};
+const int servo = 3;
+
+const int IR[5] = {A1, A2, A3, A4, A5};
 
 Servo servo1;
 
-// --- Global Variables ---
+// ========== Global Variables ==========
+int SENS_MIN[5] = {200,200,200,200,200}; 
+int SENS_MAX[5] = {900,900,900,900,900};
 
+const bool INVERT_DARK = true;
 
-void setup() {
-  // put your setup code here, to run once:
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(ENA, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(ENB, OUTPUT);
+PDGain fastGain = {18.0, 4.5};
 
-  for(int i=0, i<5, i++){
-    pinMode(IR[i], INPUT);
-  }
+float prevErr = 0.0;
+unsigned long prevT = 0;
 
-  servo1.attach(servo);
-}
-
-void loop() {
-  // put your main code here, to run repeatedly:
-
-}
+// ========== Functions ==========
 
 // Controlling both motor with different PWM values
 void driveRAW(int leftPWM, int rightPWM, bool stop){
@@ -47,7 +42,7 @@ void driveRAW(int leftPWM, int rightPWM, bool stop){
 
   // Constrain input
   leftPWM = constrain(leftPWM, -255, 255);
-  rightPWM = constrain(rigthPWM, -255, 255);
+  rightPWM = constrain(rightPWM, -255, 255);
 
   // Configurate left motor
   if(leftPWM > 0){
@@ -100,22 +95,76 @@ void driveSteer(int power, int steer){
   steer = constrain(steer, -100, 100);
 
   // Motor PWM ratio algorithm
-  int control = abs(power) - abs((power * steer) / 50);
+  int control = map(steer, -100, 100, -(power*2), power*2);
 
-  if (power < 0){
-    control = -control;
-  }
+  int L = power + control;
+  int R = power - control;
 
-  if (steer >= 0){
-    driveRAW(power, control, true);
-  }
+  L = constrain(L, -power, power);
+  R = constrain(R, -power, power);
 
-  else{
-    driveRAW(control, power, true);
-  }
+  driveRAW(L, R, true); 
 }
 
+// Mapping all IR sensors value to 0 and 1 (0 for white; 1 for black)
+float normSensor(int raw, int sMin, int sMax, bool invertDark) {
+  // x = ratio of the current sensor value and the difference between the sensor's max and min input
+  float x = float(raw - sMin) / float(max(1, sMax - sMin));
+  x = constrain(x, 0.0, 1.0);
+  return invertDark ? (1.0 - x) : x;
+}
 
+// Checking if line is currently present and update the position of it
+bool getLine(float &position, float &signalStrength) {
+  static const float W[5] = {-2, -1, 0, +1, +2};
+  float num = 0.0, den = 0.0;
+
+  for (int i = 0; i < 5; ++i) {
+    int raw = analogRead(IR[i]);
+    float v = normSensor(raw, SENS_MIN[i], SENS_MAX[i], INVERT_DARK);
+    num += v * W[i];
+    den += v;
+  }
+
+  signalStrength = den;
+  if (den < 0.02) {
+    return false;
+  }
+
+  position = num / den;
+  return true;
+}
+
+float PDSteer(float position, float &prevErr, float dtSec, const PDGains &g) {
+  float err = 0.0f - position;
+  float deriv = (dtSec > 1e-4) ? (err - prevErr) / dtSec : 0.0f;
+  float u = g.Kp * err + g.Kd * deriv;
+  prevErr = err;
+  return u; // positive u => steer left wheel faster, right slower
+}
+
+void setup() {
+  // put your setup code here, to run once:
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  for(int i=0; i<5; i++){
+    pinMode(IR[i], INPUT);
+  }
+
+  servo1.attach(servo);
+
+  prevT = micros();
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  
+}
 
 
 
