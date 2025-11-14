@@ -2,10 +2,10 @@
 #include <Servo.h>
 
 // ========== Structures ==========
-struct PDGain(){
+struct PDGain{
   float Kp;
   float Kd;
-}
+};
 
 // ========== IO Pin Connections ==========
 const int IN1 = 2;
@@ -116,8 +116,8 @@ float normSensor(int raw, int sMin, int sMax, bool invertDark) {
 
 // Checking if line is currently present and update the position of it
 bool getLine(float &position, float &signalStrength) {
-  static const float W[5] = {-2, -1, 0, +1, +2};
-  float num = 0.0, den = 0.0;
+  static const float W[5] = {-2, -1, 0, +1, +2}; // Weight of each sensors form left to right
+  float num = 0.0, den = 0.0; // num = sum of weighted input; den = sum of inout
 
   for (int i = 0; i < 5; ++i) {
     int raw = analogRead(IR[i]);
@@ -135,7 +135,7 @@ bool getLine(float &position, float &signalStrength) {
   return true;
 }
 
-float PDSteer(float position, float &prevErr, float dtSec, const PDGains &g) {
+float PDSteer(float position, float &prevErr, float dtSec, const PDGain &g) {
   float err = 0.0f - position;
   float deriv = (dtSec > 1e-4) ? (err - prevErr) / dtSec : 0.0f;
   float u = g.Kp * err + g.Kd * deriv;
