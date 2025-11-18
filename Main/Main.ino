@@ -14,7 +14,7 @@ const int ENA = 11;
 
 const int IN3 = 4;
 const int IN4 = 8;
-const int ENB = 10;
+const int ENB = 6;
 
 const int servo = 3;
 
@@ -23,15 +23,24 @@ const int IR[5] = {A1, A2, A3, A4, A5};
 Servo servo1;
 
 // ========== Global Variables ==========
-int SENS_MIN[5] = {200,200,200,200,200}; 
-int SENS_MAX[5] = {900,900,900,900,900};
+int SENS_MIN[5] = {40,40,40,40,40}; 
+int SENS_MAX[5] = {810,700,800,700,650};
 
-const bool INVERT_DARK = true;
+const bool INVERT_DARK = false;
 
-PDGain fastGain = {18.0, 4.5};
+PDGain slowGain = {-75.0, 0.0};
+
+int steer = 0;
+const int desiredPWM = 120;
+int dynamicPWM = 120;
+
+float pos, density, raw;
+bool line;
 
 float prevErr = 0.0;
 unsigned long prevT = 0;
+
+unsigned long runDebug = 0;
 
 // ========== Functions ==========
 
@@ -68,12 +77,12 @@ void driveRAW(int leftPWM, int rightPWM, bool stop){
   if(rightPWM > 0){
     digitalWrite(IN3, HIGH);
     digitalWrite(IN4, LOW);
-    analogWrite(ENB, leftPWM);
+    analogWrite(ENB, rightPWM);
   }
   else if(rightPWM <0){
     digitalWrite(IN3, LOW);
     digitalWrite(IN4, HIGH);
-    analogWrite(ENB, abs(leftPWM));
+    analogWrite(ENB, abs(rightPWM));
   }
   else if(rightPWM == 0 && stop == true){
     digitalWrite(IN3, HIGH);
@@ -100,8 +109,14 @@ void driveSteer(int power, int steer){
   int L = power + control;
   int R = power - control;
 
-  L = constrain(L, -power, power);
-  R = constrain(R, -power, power);
+  if (power >= 0){
+    L = constrain(L, -power, power);
+    R = constrain(R, -power, power);
+  }
+  else{
+    L = constrain(L, power, -power);
+    R = constrain(R, power, -power);
+  }
 
   driveRAW(L, R, true); 
 }
@@ -115,19 +130,22 @@ float normSensor(int raw, int sMin, int sMax, bool invertDark) {
 }
 
 // Checking if line is currently present and update the position of it
-bool getLine(float &position, float &signalStrength) {
+bool getLine(float &position, float &signalStrength, float &val) {
   static const float W[5] = {-2, -1, 0, +1, +2}; // Weight of each sensors form left to right
   float num = 0.0, den = 0.0; // num = sum of weighted input; den = sum of inout
 
   for (int i = 0; i < 5; ++i) {
     int raw = analogRead(IR[i]);
+    raw = constrain(raw, SENS_MIN[i], SENS_MAX[i]);
     float v = normSensor(raw, SENS_MIN[i], SENS_MAX[i], INVERT_DARK);
     num += v * W[i];
     den += v;
   }
 
+  val = num;
+
   signalStrength = den;
-  if (den < 0.02) {
+  if (den < 0.15) {
     return false;
   }
 
@@ -156,6 +174,8 @@ void setup() {
     pinMode(IR[i], INPUT);
   }
 
+  Serial.begin(9600);
+
   servo1.attach(servo);
 
   prevT = micros();
@@ -163,7 +183,68 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
+ 
+  runDebug++;
+
+  if (runDebug % 2000 == 0){
+    Serial.print("Line Position: ");
+    Serial.println(pos);
+    Serial.print("Density: ");
+    Serial.println(density);
+    Serial.print("Line Presence: ");
+    Serial.println(line);
+    Serial.print("Error: ");
+    Serial.println(prevErr);
+    Serial.print("dynamicPWM: ");
+    Serial.println(dynamicPWM);
+    Serial.print("Steer Value: ");
+    Serial.println(steer);
+    Serial.println();
+    Serial.println("==============================================");
+    Serial.println();
+
+    runDebug = 0;
+  }
+
+  unsigned long currentT = micros();
+  float dt = (currentT - prevT)/ 1e6;
+  prevT = currentT;
+
+  line = getLine(pos, density, raw);
+
+  if (!line){
+    driveSteer(dynamicPWM, steer);
+    return;
+  }
+
+  if (pos > 1.1){
+    driveSteer(130, 0);
+    delay(250);
+    while(analogRead(IR[2]) < 450){
+      driveSteer(140, 85);
+    }
+    return;
+  }
+
+  if (pos < -1.1){
+    driveSteer(130, 0);
+    delay(250);
+    while(analogRead(IR[2]) < 450){
+      driveSteer(140, -85);
+    }
+    return;
+  }
+
+  if (abs(pos) < 0.5 && density > 2.5){
+    driveSteer(130, 0);
+    return;
+  }
   
+  steer = PDSteer(pos, prevErr, dt, slowGain);
+
+  dynamicPWM = desiredPWM - int(min(0, fabs(steer * 2)));
+
+  driveSteer(dynamicPWM, steer);
 }
 
 
