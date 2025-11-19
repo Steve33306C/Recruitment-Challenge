@@ -23,8 +23,8 @@ const int IR[5] = {A1, A2, A3, A4, A5};
 Servo servo1;
 
 // ========== Global Variables ==========
-int SENS_MIN[5] = {40,40,40,40,40}; 
-int SENS_MAX[5] = {810,700,800,700,650};
+int SENS_MIN[5] = {45,40,45,40,40}; 
+int SENS_MAX[5] = {750,625,800,580,610};
 
 const bool INVERT_DARK = false;
 
@@ -191,6 +191,8 @@ void loop() {
     Serial.println(pos);
     Serial.print("Density: ");
     Serial.println(density);
+    Serial.print("Raw Value: ");
+    Serial.println(raw);
     Serial.print("Line Presence: ");
     Serial.println(line);
     Serial.print("Error: ");
@@ -217,20 +219,20 @@ void loop() {
     return;
   }
 
-  if (pos > 1.1){
+  if (raw > 1.5){
     driveSteer(130, 0);
-    delay(250);
+    delay(300);
     while(analogRead(IR[2]) < 450){
-      driveSteer(140, 85);
+      driveSteer(120, 100);
     }
     return;
   }
 
-  if (pos < -1.1){
+  if (raw < -1.5){
     driveSteer(130, 0);
-    delay(250);
+    delay(300);
     while(analogRead(IR[2]) < 450){
-      driveSteer(140, -85);
+      driveSteer(120, -100);
     }
     return;
   }
