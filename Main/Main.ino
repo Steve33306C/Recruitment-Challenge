@@ -1,6 +1,9 @@
 // ========== Libraries Included ==========
 #include <Servo.h>
 
+// ========== Tuning Values ==========
+#define turnRAW 2.5
+
 // ========== Structures ==========
 struct PDGain{
   float Kp;
@@ -16,29 +19,38 @@ const int IN3 = 4;
 const int IN4 = 8;
 const int ENB = 6;
 
-const int servo = 3;
+const int servo = 10;
 
 const int IR[5] = {A1, A2, A3, A4, A5};
 
 Servo servo1;
 
 // ========== Global Variables ==========
-int SENS_MIN[5] = {45,40,45,40,40}; 
-int SENS_MAX[5] = {750,625,800,580,610};
+int SENS_MIN[5] = {30,30,30,30,30}; 
+int SENS_MAX[5] = {750,700,800,700,600};
 
 const bool INVERT_DARK = false;
 
-PDGain slowGain = {-75.0, 0.0};
+PDGain slowGain = {-100.0, 0.0};
 
 int steer = 0;
-const int desiredPWM = 120;
-int dynamicPWM = 120;
+const int desiredPWM = 200;
+int dynamicPWM = desiredPWM;
 
 float pos, density, raw;
 bool line;
+bool checkCentre = true;
+int checkOpp = 0;
+
+int lineCount = 1;
+int servoPos = 0;
+bool servoDirection = true;
+bool servoON = false;
+int pushN = 0;
 
 float prevErr = 0.0;
 unsigned long prevT = 0;
+unsigned long saveTime = 0;
 
 unsigned long runDebug = 0;
 
@@ -131,7 +143,7 @@ float normSensor(int raw, int sMin, int sMax, bool invertDark) {
 
 // Checking if line is currently present and update the position of it
 bool getLine(float &position, float &signalStrength, float &val) {
-  static const float W[5] = {-2, -1, 0, +1, +2}; // Weight of each sensors form left to right
+  static const float W[5] = {-6, -2, 0, +2, +6}; // Weight of each sensors form left to right
   float num = 0.0, den = 0.0; // num = sum of weighted input; den = sum of inout
 
   for (int i = 0; i < 5; ++i) {
@@ -178,12 +190,21 @@ void setup() {
 
   servo1.attach(servo);
 
+  servo1.write(0);
+
+  driveSteer(desiredPWM, 0);
+
+  delay(200);
+
   prevT = micros();
+  saveTime = millis();
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
- 
+
+  servo1.write(servoPos);
+
   runDebug++;
 
   if (runDebug % 2000 == 0){
@@ -208,6 +229,20 @@ void loop() {
     runDebug = 0;
   }
 
+  if (lineCount == 5){
+    driveSteer(desiredPWM, 0);
+    delay(400);
+    driveSteer(0, 0);
+    lineCount++;
+    return;
+  }
+
+  if (lineCount == 6){
+    driveRAW(0, 0, false);
+    delay(2);
+    return;
+  }
+
   unsigned long currentT = micros();
   float dt = (currentT - prevT)/ 1e6;
   prevT = currentT;
@@ -219,32 +254,94 @@ void loop() {
     return;
   }
 
-  if (raw > 1.5){
-    driveSteer(130, 0);
-    delay(300);
-    while(analogRead(IR[2]) < 450){
-      driveSteer(120, 100);
+  if (abs(raw) > turnRAW && millis() - saveTime >= 300){
+    driveSteer(desiredPWM, 0);
+    if(raw > 0){
+      checkOpp = -1;
     }
-    return;
+    else{
+      checkOpp = 1;
+    }
   }
 
-  if (raw < -1.5){
-    driveSteer(130, 0);
-    delay(300);
-    while(analogRead(IR[2]) < 450){
-      driveSteer(120, -100);
+  if(checkOpp == -1){
+    saveTime = millis();
+    checkCentre = false;
+    while(millis() - saveTime < 200){
+      if (analogRead(IR[0]) > (SENS_MAX[0] + SENS_MIN[0]) / 2){
+        checkCentre = true;
+        break;
+      }
     }
-    return;
+
+    if(checkCentre == true){
+      lineCount++;
+      servoON = true;
+      saveTime = millis();
+      if (lineCount == 5){
+        return;
+      }
+    }
+    else{
+      while(analogRead(IR[3]) < (SENS_MAX[3] + SENS_MIN[3]) / 2){
+        driveSteer(150, 100);
+      }
+    }
+    checkOpp = 0;
   }
 
-  if (abs(pos) < 0.5 && density > 2.5){
-    driveSteer(130, 0);
-    return;
+  if(checkOpp == 1){
+    saveTime = millis();
+    checkCentre = false;
+    while(millis() - saveTime < 200){
+      if (analogRead(IR[4]) > (SENS_MAX[4] + SENS_MIN[4]) / 2){
+        checkCentre = true;
+        break;
+      }
+    }
+
+    if(checkCentre == true){
+      lineCount++;
+      servoON = true;
+      saveTime = millis();
+      if (lineCount == 5){
+        return;
+      }
+    }
+    else{
+      while(analogRead(IR[1]) < (SENS_MAX[1] + SENS_MIN[1]) / 2){
+        driveSteer(150, -100);
+      }
+    }
+    checkOpp = 0;
+  }
+
+  if (lineCount >= 2 && lineCount <= 4){
+    if(pushN != lineCount && servoON == false && millis() - saveTime > 300){
+      servoON = true;
+    }
   }
   
   steer = PDSteer(pos, prevErr, dt, slowGain);
 
-  dynamicPWM = desiredPWM - int(min(0, fabs(steer * 2)));
+  dynamicPWM = desiredPWM - int(min(75, fabs(steer * 1)));
+
+  if (servoON == true){
+    dynamicPWM = 100;
+    steer = 0;
+    if (servoDirection == true){
+      servoPos = 180;
+      servoON = false;
+      servoDirection = false;
+      pushN ++;
+    }
+    else{
+      servoPos = 0;
+      servoON = false;
+      servoDirection = true;
+      pushN ++;
+    }
+  }
 
   driveSteer(dynamicPWM, steer);
 }
