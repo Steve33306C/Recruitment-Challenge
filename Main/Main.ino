@@ -268,7 +268,7 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  if (servoON == true && millis() - dropDelay >= servoDelay){
+  if (servoON == true && millis() - dropDelay >= servoDelay && lineCount <= 3){
     servo1.write(36 * lineCount);
     servoON = false;
     dropDelay = millis();
