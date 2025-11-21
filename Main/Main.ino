@@ -23,6 +23,8 @@ const int servo = 10;
 
 const int IR[5] = {A1, A2, A3, A4, A5};
 
+const int button = 12;
+
 Servo servo1;
 
 // ========== Global Variables ==========
@@ -182,6 +184,8 @@ void setup() {
   pinMode(IN4, OUTPUT);
   pinMode(ENB, OUTPUT);
 
+  pinMode(LED_BUILTIN, OUTPUT);
+
   for(int i=0; i<5; i++){
     pinMode(IR[i], INPUT);
   }
@@ -191,6 +195,38 @@ void setup() {
   servo1.attach(servo);
 
   servo1.write(0);
+
+  saveTime = millis();
+
+  while(true){
+    if (digitalRead(button)){
+      if (millis() - saveTime >= 2000){
+        while(digitalRead(button)){
+          digitalWrite(LED_BUILTIN, HIGH);
+          delay(200);
+          digitalWrite(LED_BUILTIN, LOW);
+          delay(200);
+        }
+        break;
+      }
+    }
+    else{
+      for (int i = 0; i <= 4; i++){
+        int v = analogRead(IR[i]);
+
+        if (v > SENS_MAX[i]){
+          SENS_MAX[i] = v;
+        }
+        if (v < SENS_MIN[i]){
+          SENS_MIN[i] = v;
+        }
+      }
+      saveTime = millis();
+    }
+    
+  }
+
+  delay(2000);
 
   driveSteer(desiredPWM, 0);
 
