@@ -175,6 +175,25 @@ float PDSteer(float position, float &prevErr, float dtSec, const PDGain &g) {
   return u; // positive u => steer left wheel faster, right slower
 }
 
+void dropCubes() {
+  if (servoON == true){
+    dynamicPWM = 100;
+    steer = 0;
+    if (servoDirection == true){
+      servoPos = 180;
+      servoON = false;
+      servoDirection = false;
+      pushN ++;
+    }
+    else{
+      servoPos = 0;
+      servoON = false;
+      servoDirection = true;
+      pushN ++;
+    }
+  }
+}
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(IN1, OUTPUT);
@@ -200,7 +219,7 @@ void setup() {
 
   while(true){
     if (digitalRead(button)){
-      if (millis() - saveTime >= 2000){
+      if (millis() - saveTime >= 2500){
         while(digitalRead(button)){
           digitalWrite(LED_BUILTIN, HIGH);
           delay(200);
@@ -221,9 +240,33 @@ void setup() {
           SENS_MIN[i] = v;
         }
       }
-      saveTime = millis();
+
+      if (millis() - saveTime >= 1000){
+        for (int i = 0; i <= 4; i++){
+          Serial.print(SENS_MAX[i]);
+          Serial.print("  ");
+        }
+
+        Serial.println();
+        
+        for (int i = 0; i <= 4; i++){
+          Serial.print(SENS_MIN[i]);
+          Serial.print("  ");
+        }
+
+        Serial.println();
+
+        for (int i = 0; i <= 4; i++){
+          Serial.print(analogRead(IR[i]));
+          Serial.print(" ");
+        }
+        Serial.println();
+        Serial.println("===================================");
+        Serial.println();
+        
+        saveTime = millis();
+      }
     }
-    
   }
 
   delay(2000);
@@ -362,25 +405,7 @@ void loop() {
 
   dynamicPWM = desiredPWM - int(min(75, fabs(steer * 1)));
 
-  if (servoON == true){
-    dynamicPWM = 100;
-    steer = 0;
-    if (servoDirection == true){
-      servoPos = 180;
-      servoON = false;
-      servoDirection = false;
-      pushN ++;
-    }
-    else{
-      servoPos = 0;
-      servoON = false;
-      servoDirection = true;
-      pushN ++;
-    }
-  }
+  dropCubes();
 
   driveSteer(dynamicPWM, steer);
 }
-
-
-
