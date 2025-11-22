@@ -2,7 +2,10 @@
 #include <Servo.h>
 
 // ========== Tuning Values ==========
-#define turnRAW 2.5
+#define turnRAW 2.7
+#define straightTime 130
+#define turnPwr 150
+#define servoDelay 400
 
 // ========== Structures ==========
 struct PDGain{
@@ -28,12 +31,12 @@ const int button = 12;
 Servo servo1;
 
 // ========== Global Variables ==========
-int SENS_MIN[5] = {30,30,30,30,30}; 
-int SENS_MAX[5] = {750,700,800,700,600};
+int SENS_MIN[5] = {100,100,100,100,100}; 
+int SENS_MAX[5] = {550,550,550,550,550};
 
 const bool INVERT_DARK = false;
 
-PDGain slowGain = {-100.0, 0.0};
+PDGain slowGain = {-85.0, 0.0};
 
 int steer = 0;
 const int desiredPWM = 200;
@@ -44,15 +47,15 @@ bool line;
 bool checkCentre = true;
 int checkOpp = 0;
 
-int lineCount = 1;
+int lineCount = 0;
 int servoPos = 0;
-bool servoDirection = true;
-bool servoON = false;
-int pushN = 0;
+int currentPos = 0;
 
 float prevErr = 0.0;
 unsigned long prevT = 0;
-unsigned long saveTime = 0;
+unsigned long lastBreak = 0;
+unsigned long dropDelay = 0;
+bool servoON = false;
 
 unsigned long runDebug = 0;
 
@@ -175,25 +178,6 @@ float PDSteer(float position, float &prevErr, float dtSec, const PDGain &g) {
   return u; // positive u => steer left wheel faster, right slower
 }
 
-void dropCubes() {
-  if (servoON == true){
-    dynamicPWM = 100;
-    steer = 0;
-    if (servoDirection == true){
-      servoPos = 180;
-      servoON = false;
-      servoDirection = false;
-      pushN ++;
-    }
-    else{
-      servoPos = 0;
-      servoON = false;
-      servoDirection = true;
-      pushN ++;
-    }
-  }
-}
-
 void setup() {
   // put your setup code here, to run once:
   pinMode(IN1, OUTPUT);
@@ -213,13 +197,15 @@ void setup() {
 
   servo1.attach(servo);
 
+  lastBreak = millis();
+
   servo1.write(0);
+  delay(1000);
 
-  saveTime = millis();
-
+// Sensor values configuration
   while(true){
     if (digitalRead(button)){
-      if (millis() - saveTime >= 2500){
+      if (millis() - lastBreak >= 2500){
         while(digitalRead(button)){
           digitalWrite(LED_BUILTIN, HIGH);
           delay(200);
@@ -241,7 +227,7 @@ void setup() {
         }
       }
 
-      if (millis() - saveTime >= 1000){
+      if (millis() - lastBreak >= 1000){
         for (int i = 0; i <= 4; i++){
           Serial.print(SENS_MAX[i]);
           Serial.print("  ");
@@ -264,7 +250,8 @@ void setup() {
         Serial.println("===================================");
         Serial.println();
         
-        saveTime = millis();
+        lastBreak = millis();
+
       }
     }
   }
@@ -276,47 +263,53 @@ void setup() {
   delay(200);
 
   prevT = micros();
-  saveTime = millis();
+  lastBreak = millis();
+  dropDelay = millis();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
-  servo1.write(servoPos);
-
-  runDebug++;
-
-  if (runDebug % 2000 == 0){
-    Serial.print("Line Position: ");
-    Serial.println(pos);
-    Serial.print("Density: ");
-    Serial.println(density);
-    Serial.print("Raw Value: ");
-    Serial.println(raw);
-    Serial.print("Line Presence: ");
-    Serial.println(line);
-    Serial.print("Error: ");
-    Serial.println(prevErr);
-    Serial.print("dynamicPWM: ");
-    Serial.println(dynamicPWM);
-    Serial.print("Steer Value: ");
-    Serial.println(steer);
-    Serial.println();
-    Serial.println("==============================================");
-    Serial.println();
-
-    runDebug = 0;
+  // Drop cubes or sphere    
+  if (servoON == true && millis() - dropDelay >= servoDelay && lineCount <= 3){
+    servo1.write(36 * lineCount);
+    servoON = false;
+    dropDelay = millis();
   }
 
-  if (lineCount == 5){
-    driveSteer(desiredPWM, 0);
-    delay(400);
+
+  // Running debug monitor
+  // runDebug++;
+
+  // if (runDebug % 2000 == 0){
+  //   Serial.print("Line Position: ");
+  //   Serial.println(pos);
+  //   Serial.print("Density: ");
+  //   Serial.println(density);
+  //   Serial.print("Raw Value: ");
+  //   Serial.println(raw);
+  //   Serial.print("Line Presence: ");
+  //   Serial.println(line);
+  //   Serial.print("Error: ");
+  //   Serial.println(prevErr);
+  //   Serial.print("dynamicPWM: ");
+  //   Serial.println(dynamicPWM);
+  //   Serial.print("Steer Value: ");
+  //   Serial.println(steer);
+  //   Serial.println();
+  //   Serial.println("==============================================");
+  //   Serial.println();
+
+  //   runDebug = 0;
+  // }
+
+  if (lineCount == 4){
+    driveSteer(255, 0);
+    delay(250);
     driveSteer(0, 0);
     lineCount++;
     return;
   }
 
-  if (lineCount == 6){
+  if (lineCount == 5){
     driveRAW(0, 0, false);
     delay(2);
     return;
@@ -333,7 +326,7 @@ void loop() {
     return;
   }
 
-  if (abs(raw) > turnRAW && millis() - saveTime >= 300){
+  if (abs(raw) > turnRAW && millis() - lastBreak >= straightTime){
     driveSteer(desiredPWM, 0);
     if(raw > 0){
       checkOpp = -1;
@@ -343,69 +336,75 @@ void loop() {
     }
   }
 
+  if (density > 4.0 && pos <= 1.2 && millis() - lastBreak >= straightTime){
+    lineCount++;
+    checkOpp = 0;
+    servoON = true;
+    dropDelay = millis();
+    lastBreak = millis();
+  }
+
   if(checkOpp == -1){
-    saveTime = millis();
+    lastBreak = millis();
     checkCentre = false;
-    while(millis() - saveTime < 200){
+    while(millis() - lastBreak < straightTime){
       if (analogRead(IR[0]) > (SENS_MAX[0] + SENS_MIN[0]) / 2){
         checkCentre = true;
+        servoON = true;
+        dropDelay = millis();
         break;
       }
     }
 
     if(checkCentre == true){
       lineCount++;
-      servoON = true;
-      saveTime = millis();
-      if (lineCount == 5){
+      checkCentre = false;
+      checkOpp = 0;
+      lastBreak = millis();
+      if (lineCount == 4){
         return;
       }
     }
-    else{
+    else{      
       while(analogRead(IR[3]) < (SENS_MAX[3] + SENS_MIN[3]) / 2){
-        driveSteer(150, 100);
+        driveSteer(turnPwr, 100);
       }
     }
     checkOpp = 0;
   }
 
   if(checkOpp == 1){
-    saveTime = millis();
+    lastBreak = millis();
     checkCentre = false;
-    while(millis() - saveTime < 200){
+    while(millis() - lastBreak < straightTime){
       if (analogRead(IR[4]) > (SENS_MAX[4] + SENS_MIN[4]) / 2){
         checkCentre = true;
+        servoON = true;
+        dropDelay = millis();
         break;
       }
     }
 
     if(checkCentre == true){
       lineCount++;
-      servoON = true;
-      saveTime = millis();
+      lastBreak = millis();
+      checkCentre = false;
+      checkOpp = 0;
       if (lineCount == 5){
         return;
       }
     }
     else{
       while(analogRead(IR[1]) < (SENS_MAX[1] + SENS_MIN[1]) / 2){
-        driveSteer(150, -100);
+        driveSteer(turnPwr, -100);
       }
     }
     checkOpp = 0;
   }
 
-  if (lineCount >= 2 && lineCount <= 4){
-    if(pushN != lineCount && servoON == false && millis() - saveTime > 300){
-      servoON = true;
-    }
-  }
-  
   steer = PDSteer(pos, prevErr, dt, slowGain);
 
-  dynamicPWM = desiredPWM - int(min(75, fabs(steer * 1)));
-
-  dropCubes();
+  dynamicPWM = desiredPWM - int(min(90, fabs(steer * 1.8)));
 
   driveSteer(dynamicPWM, steer);
 }
