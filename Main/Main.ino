@@ -202,6 +202,7 @@ void setup() {
   servo1.write(0);
   delay(1000);
 
+// Sensor values configuration
   while(true){
     if (digitalRead(button)){
       if (millis() - lastBreak >= 2500){
@@ -267,13 +268,15 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  // Drop cubes or sphere    
   if (servoON == true && millis() - dropDelay >= servoDelay && lineCount <= 3){
     servo1.write(36 * lineCount);
     servoON = false;
     dropDelay = millis();
   }
 
+
+  // Running debug monitor
   // runDebug++;
 
   // if (runDebug % 2000 == 0){
